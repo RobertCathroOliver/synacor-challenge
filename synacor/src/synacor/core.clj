@@ -160,21 +160,14 @@
       (if (program :debug) (show-program-state program))
       result))
 
+(defn set-script
+  [program script]
+  (assoc program :buffer script))
+
 (defn run-program
   [program]
   (let [result (step-program program)]
     (if (not (= (result :next-instruction-ptr) nil)) (recur (assoc result :instruction-ptr (result :next-instruction-ptr))) result)))
-
-(defn execute-program-old
-  [program]
-  (let [index (program :instruction-ptr)
-        instruction (get-instruction program index)
-        op (nth opcodes instruction)
-        arity (- (get-arity op) 1)
-        args (concat [(assoc program :next-instruction-ptr (+ 1 arity (program :instruction-ptr)))] (take arity (drop (+ index 1) (program :instructions))))
-        result (apply op args)]
-      (if (program :debug) (show-program-state program))
-      (if (not (= (result :next-instruction-ptr) nil)) (recur (assoc result :instruction-ptr (result :next-instruction-ptr))) result)))
 
 (defn find-instructions
   [program instruction]
