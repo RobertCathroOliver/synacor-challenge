@@ -34,11 +34,7 @@
 
 (defn create-program
   [instructions]
-  {:instructions instructions :registry [0 0 0 0 0 0 0 0] :stack [] :instruction-ptr 0 :next-instruction-ptr nil :buffer "" :debug false :step false})
-
-(defn toggle-debug
-  [program]
-  (assoc program :debug true))
+  {:instructions instructions :registry [0 0 0 0 0 0 0 0] :stack [] :instruction-ptr 0 :next-instruction-ptr nil :buffer ""})
 
 (defn load-program
   [filename]
@@ -91,16 +87,13 @@
 
 (declare execute-program)
 
+(defn set-buffer
+  [program script]
+  (assoc program :buffer script))
+
 (defn read-character
   [program]
-  (let [buffer (if (empty? (program :buffer)) (str (read-line) \newline) (program :buffer))]
-    (cond
-      (= "~\n" buffer) (do (show-program-state program) (read-character program))
-      (= "!\n" buffer) (assoc (set-instruction-pointer program nil) :buffer "\n")
-      (= "#\n" buffer) (assoc (read-character program) :debug (not (program :debug)))
-      (= \@ (first buffer)) (assoc program :registry (:registry (execute-program (create-program (string->ints (rest buffer))))) :buffer buffer)
-      :else (assoc program :buffer buffer))))
-
+  (if (empty? (program :buffer)) (set-buffer program (str (read-line) \newline)) program))
 
 (def opcodes [
   ;; 0 - halt
@@ -155,20 +148,63 @@
         instruction (get-instruction program index)
         op (nth opcodes instruction)
         arity (- (get-arity op) 1)
-        args (concat [(assoc program :next-instruction-ptr (+ 1 arity (program :instruction-ptr)))] (take arity (drop (+ index 1) (program :instructions))))
-        result (apply op args)]
-      (if (program :debug) (show-program-state program))
-      result))
+        args (concat [(assoc program :next-instruction-ptr (+ 1 arity (program :instruction-ptr)))] (take arity (drop (+ index 1) (program :instructions))))]
+      (apply op args)))
 
-(defn set-script
-  [program script]
-  (assoc program :buffer script))
+(defn one-step
+  [program]
+  (let [result (step-program program)]
+    (if (not (= (result :next-instruction-ptr) nil)) 
+      (assoc result :instruction-ptr (result :next-instruction-ptr))
+      nil)))
+
+(defn step-to-buffer-drain
+  [program]
+  (if (and 
+        (empty? (program :buffer))
+        (= 20 (get-instruction program (program :instruction-ptr))))
+    program
+    (recur (one-step program))))
+  
+
+(defn debug-program
+  [program]
+  (if (not (= program nil))
+    (do
+      (print "> ")
+      (flush)
+      (let [input (read-line)
+            steps (re-find (re-matcher #"^\d+$" input))]
+        (cond
+          ;; Show the current program context
+          (= "@" input) (do (show-program-state program) (flush) (recur program))
+          ;; Stop debugging
+          (= "!" input) program
+          ;; Go until input required and buffer empty
+          (= "+" input)
+            (recur (step-to-buffer-drain program))
+          ;; Step once
+          (empty? input) 
+            (do
+              (println ".")
+              (flush)
+              (recur (one-step program)))
+          ;; step 'steps' times
+          (not (= nil steps))
+            (recur 
+              (loop [n (Integer/valueOf steps) p program] 
+                (if (and (> n 0) (not (= p nil)))
+                  (recur (- n 1) (one-step p))
+                  p)))
+          ;; put stuff on the input queue
+          :else (recur (set-buffer program (str input \newline))))))))
 
 (defn run-program
   [program]
   (let [result (step-program program)]
     (if (not (= (result :next-instruction-ptr) nil)) (recur (assoc result :instruction-ptr (result :next-instruction-ptr))) result)))
 
+;; functions for introspection
 (defn find-instructions
   [program instruction]
   (map first
