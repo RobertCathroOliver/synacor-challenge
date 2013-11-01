@@ -1,3 +1,57 @@
+;; Synacor challenge
+;; Robert Cathro-Oliver
+;; 1 November 2013
+
+;; Notes:
+;; Code 1: JCievrHAEENZ
+;;   From the arch-spec
+;; Code 2: stuFCvWbIDEl
+;;   Get the VM running with opcode 19 (output)
+;; Code 3: CYyTJnEGoxLF
+;;   Run the self-test successfully
+;; Code 4: zjmMIjVZgqWp
+;;   'use tablet' to write this code on the tablet
+;; Code 5: jXewMnpBsKyd
+;;   Chiselled in the wall amidst winding passages.
+;;   Use coins in order on slot machine to solve equation.
+;;   red coin = 2, blue coin = 9, shiny coin = 5, concave coin = 7, corroded coin = 3
+;;   (blue = 9) + (red = 2) * (shiny = 5) ^2 + (concave = 7) ^3 - (corroded = 3) = 399
+;; Code 6: JZyMwNrDkeSD
+;;   Use teleporter with register 8 = 0
+;; Code 7: mpebObUrEhkJ
+;;   Use teleporter with register 8 = 25734, register 0 = 6, skip instruction 5489
+;;   Used find-instructions function to find where register 8 was being used in the code.
+;;   Found the calculation at instruction 6027.  Found the test at 5391 and the call to 6027 at 5389.
+;;   6027 describes a recursive function:
+;;     (defn f [a b c]
+;;       (cond
+;;         (= 0 a) (+ b 1)
+;;         (= 0 b) (f (- a 1) c c)
+;;         :else (f (- a 1) (f a (- b 1) c) c)))
+;;   Where initially a = register 1 = 4, b = register 2 = 1, c = register 8
+;;   But this blows the stack.
+;;   Unwind it a bit (by hand):
+;;     (f 2 n c) == (+ (* c (+ n 2)) n 1)
+;;     (f 3 n c) == (f 2 (f 3 (- n 1) c) c)
+;;     (f 4 1 c) == (f 3 (f 3 c c) c)
+;;   Write (f 3 b c) as tail recursive so as not to blow the stack
+;;   Run this for all values of c (i.e. register 8) mod 32768 to find the value of 6 that gives a result of 6.
+;; Code 8: YwMWoAup8Wbl
+;;   Solve weight problem to get to vault
+;;   Path = N E E N W S E E W N N E
+;;   Take mirror and use mirror to get "ldW8quAoWMwY"
+;;   Reverse string and take mirror-image of characters
+;;   To solve the weight problem:
+;;     Found a solution manually that took 14 steps
+;;     Minimum solution is 6 steps
+;;     All solutions have even length
+;;     Given grid, start position, end position, length and final value, get-path function calculates all
+;;       paths fitting the criteria
+;;     (get-path grid [0 3] [3 0] 6 30) -> no results
+;;     (get-path grid [0 3] [3 0] 8 30) -> no results
+;;     (get-path grid [0 3] [3 0] 10 30) -> no results
+;;     (get-path grid [0 3] [3 0] 12 30)
+
 (ns synacor.core
   (:gen-class))
 
@@ -21,8 +75,6 @@
 (defn string->ints
   [string]
   (map #(Integer/valueOf %) (filter #(not (empty? %)) (clojure.string/split (apply str string) #"\s"))))
-
-(def input-file "/home/robert/synacor/challenge.bin")
 
 (defn get-register
   [value]
@@ -282,6 +334,9 @@
 ;; (f 2 n c) == (+ (* c (+ n 2)) n 1)
 ;; (f 3 n c) == (f 2 (f 3 (- n 1) c) c)
 ;; Write it tail recursive so as not to blow the stack:
+;; (f 4 1 c) == (f 3 (f 3 c c) c)
+;; registry value = 25734
+
 (defn f2 [x c] (mod (+ (* (+ x 2) c) x 1) 32768))
 (defn f3 [b c]
   (loop [x c k 0]
@@ -289,3 +344,84 @@
       (f2 x c)
       (recur (f2 x c) (+ k 1)))))
 
+;; Solve the weight grid
+;; Found a solution manually that took 14 steps
+;; Minimum solution is 6 steps
+;; (get-path grid [0 3] [3 0] 6 30) -> no results
+;; (get-path grid [0 3] [3 0] 10 30) -> no results
+;; (get-path grid [0 3] [3 0] 12 30)
+;; (:N :E :E :N :W :S :E :E :W :N :N :E)
+
+;; This is from clojure.contrib.  I just didn't want to include dependencies
+(defn cartesian-product
+  "All the ways to take one item from each sequence"
+  [& seqs]
+  (let [v-original-seqs (vec seqs)
+        step
+        (fn step [v-seqs]
+          (let [increment
+                (fn [v-seqs]
+                  (loop [i (dec (count v-seqs)), v-seqs v-seqs]
+                    (if (= i -1) nil
+                        (if-let [rst (next (v-seqs i))]
+                          (assoc v-seqs i rst)
+                          (recur (dec i) (assoc v-seqs i (v-original-seqs i)))))))]
+            (when v-seqs
+               (cons (map first v-seqs)
+                     (lazy-seq (step (increment v-seqs)))))))]
+    (when (every? seq seqs)
+      (lazy-seq (step v-original-seqs)))))
+
+(def grid
+  [[ *  8  -  1]
+   [ 4  * 11  *]
+   [ +  4  - 18]
+   [22  -  9  *]])
+
+(def directions
+  {:N [0 -1] :E [1 0] :S [0 1] :W [-1 0]})
+
+(defn go-grid [pos dir]
+  (vector (+ (first pos) (first (directions dir))) (+ (second pos) (second (directions dir)))))
+
+(defn go-path [start [dir & path]]
+   (if (= dir nil)
+     start
+     (recur (go-grid start dir) path)))
+
+(defn grid-value [grid pos]
+  (nth (nth grid (second pos) nil) (first pos) nil))
+
+(defn calc-grid [grid value pos1 pos2]
+  (let [operator (grid-value grid pos1)
+        operand (grid-value grid pos2)]
+    (if (or (= nil operator) (= nil operand))
+      nil
+      (operator value operand))))
+
+(defn calc-path [grid value pos start-pos end-pos [dir1 dir2 & path]]
+  (let [pos1 (go-grid pos dir1)
+        pos2 (go-grid pos1 dir2)
+        result (calc-grid grid value pos1 pos2)]
+    (cond
+      (= result nil) nil
+      (= pos2 start-pos) nil
+      (= 0 (count path))
+        (if (= pos2 end-pos)
+           result
+           nil)
+      (= pos2 end-pos) nil
+      :else (recur grid result pos2 start-pos end-pos path))))
+
+(defn show-path [index]
+  (loop [i index p []]
+    (if (= 0 i)
+      (reverse p)
+      (recur (/ (- i (mod i 4)) 4) (conj p (nth (keys directions) (mod i 4)))))))
+
+
+(defn get-path [grid start-pos end-pos length end-value]
+  (let [all-paths (apply cartesian-product (repeat length (vec (keys directions))))
+        path-values (map #(calc-path grid (grid-value grid start-pos) start-pos start-pos end-pos %) all-paths)
+        path-details (filter #(= end-value (second %)) (map-indexed vector path-values))]
+    (show-path (first (first path-details)))))
