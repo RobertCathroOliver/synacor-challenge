@@ -95,7 +95,7 @@
   [program]
   (if (empty? (program :buffer)) (set-buffer program (str (read-line) \newline)) program))
 
-(def opcodes [
+(def ^:dynamic opcodes [
   ;; 0 - halt
   (fn [p] (set-instruction-pointer p nil))
   ;; 1 - set register
@@ -166,6 +166,20 @@
     program
     (recur (one-step program))))
   
+(defn step-to-match-output
+  [program to-match]
+  (binding [opcodes (assoc opcodes 19 (fn [p a] (let [c (char (get-value p a))] (print c) (flush) (assoc p :output (conj (p :output) c)))))]
+    (loop [p program]
+      (if (and (not (= p nil))
+               (not (re-find (re-pattern to-match) (apply str (reverse (p :output))))))
+        (recur (one-step p))
+        (dissoc p :output)))))
+
+(defn step-to-breakpoint
+  [program breakpoints]
+  (if (contains? breakpoints (program :instruction-ptr))
+    program
+    (recur (one-step program) breakpoints)))
 
 (defn debug-program
   [program]
@@ -185,10 +199,24 @@
             (recur (step-to-buffer-drain program))
           ;; Step once
           (empty? input) 
-            (do
-              (println ".")
+            (let [p (one-step program)]
+              (show-program-state program)
               (flush)
-              (recur (one-step program)))
+              (recur p))
+          ;; Step until output is matched
+          (= \- (first input))
+            (recur (step-to-match-output program (apply str (rest input))))
+          ;; Step until one of the given breakpoints is reached
+          (= \^ (first input))
+            (recur (step-to-breakpoint program (set (string->ints (rest input)))))
+          ;; Goto given line
+          (= \# (first input))
+            (recur (assoc program :instruction-ptr (first (string->ints (rest input)))))
+          ;; Set register
+          (= \= (first input))
+            (let [registry (program :registry)
+                  values (string->ints (rest input))]
+              (recur (assoc program :registry (assoc registry (first values) (second values)))))
           ;; step 'steps' times
           (not (= nil steps))
             (recur 
@@ -234,3 +262,30 @@
       (map-indexed vector)
       (filter #(= (second %) subsequence))
       (map first))))
+
+(defn modexp [base exponent modulus]
+  (loop [b base e exponent acc 1]
+    (if (> e 0)
+      (if (= 1 (mod e 2))
+        (recur (mod (* b b) modulus) (bit-shift-right e 1) (mod (* b acc) modulus))
+        (recur (mod (* b b) modulus) (bit-shift-right e 1) acc))
+      acc)))
+
+;; Based on the code at 6027
+;; This blows the stack
+;; (defn f [a b c]
+;;  (cond
+;;    (= 0 a) (+ b 1)
+;;    (= 0 b) (f (- a 1) c c)
+;;    :else (f (- a 1) (f a (- b 1) c) c)))
+;; Unwind it a bit:
+;; (f 2 n c) == (+ (* c (+ n 2)) n 1)
+;; (f 3 n c) == (f 2 (f 3 (- n 1) c) c)
+;; Write it tail recursive so as not to blow the stack:
+(defn f2 [x c] (mod (+ (* (+ x 2) c) x 1) 32768))
+(defn f3 [b c]
+  (loop [x c k 0]
+    (if (= b k)
+      (f2 x c)
+      (recur (f2 x c) (+ k 1)))))
+
