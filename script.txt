@@ -50,4 +50,33 @@ take teleporter
 use teleporter
 take business card
 take strange book
-
+use teleporter
+go north
+go north
+go north
+go north
+go north
+go north
+go north
+go east
+take journal
+look journal
+go west
+go north
+go north
+take orb
+go north
+go east
+go east
+go north
+go west
+go south
+go east
+go east
+go west
+go north
+go north
+go east
+go vault
+take mirror
+use mirror
