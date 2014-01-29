@@ -1,0 +1,4 @@
+synacor-challenge
+=================
+
+Synacor Challenge
